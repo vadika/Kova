@@ -60,10 +60,12 @@ jobs:
       - name: Build Linux bundles
         run: npm run tauri build -- --bundles deb,rpm,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
-      # linuxdeploy over-bundles libEGL/Mesa/Wayland into the AppImage, which
-      # then can't initialise EGL against the host GPU drivers (EGL_BAD_PARAMETER,
-      # issue #3). Strip those libs so the AppImage falls through to the host's
-      # copies, then repack. The unbundled binary already works against host libs.
+      # linuxdeploy bundles libwayland-* (built on ubuntu-22.04). The host's
+      # Mesa libEGL then loads those stale bundled wayland libs, breaking the
+      # Wayland-EGL handshake → "EGL_BAD_PARAMETER. Aborting..." (issue #3,
+      # confirmed fixed on Arch). Strip them so the AppImage uses host libwayland.
+      # The GL/Mesa/gbm/drm/dri entries below are a defensive denylist — not
+      # currently bundled, but cheap insurance if a future linuxdeploy adds them.
       - name: De-bundle graphics libs from AppImage
         run: |
           set -euo pipefail
@@ -71,9 +73,9 @@ jobs:
           APP=$(ls *.AppImage | head -1)
           ./"$APP" --appimage-extract >/dev/null
           ( cd squashfs-root/usr/lib && rm -f \
+              libwayland-client.so* libwayland-cursor.so* libwayland-egl.so* libwayland-server.so* \
               libEGL.so* libGL.so* libGLX.so* libGLdispatch.so* libOpenGL.so* \
               libGLESv2.so* libgbm.so* libdrm.so* libEGL_mesa.so* libgallium*.so* \
-              libwayland-client.so* libwayland-cursor.so* libwayland-egl.so* libwayland-server.so* \
             && rm -rf dri/ )
           wget -qO /tmp/appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x /tmp/appimagetool
